@@ -48,6 +48,7 @@ def convertFileForPackage(inFile, fileName, zip, zipFileName):
 
 
 #Get the gist with all of our private keys
+inDev = False
 try:
     privateGist = Gist(os.environ["PRIVATE_GIST"]).getFileContent()
 except:
@@ -60,6 +61,9 @@ except:
     except:
         print("Unable to find private...")
         quit()
+
+    print("Running in dev because why not!")
+    inDev = True
 
 #Get private data (database connection, Discord token, etc.)
 private = json.loads(privateGist["private.json"])
@@ -97,7 +101,10 @@ drive = GoogleDrive(gauth)
 
 
 #Run the Discord bot
-bot = commands.Bot(command_prefix="!")
+if not inDev:
+    bot = commands.Bot(command_prefix="!")
+else:
+    bot = commands.Bot(command_prefix="?")
 
 
 
