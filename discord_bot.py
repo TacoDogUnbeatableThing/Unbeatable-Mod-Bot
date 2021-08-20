@@ -3,6 +3,7 @@ import discord
 
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
+from pydrive2.files import GoogleDriveFile
 
 from pymongo import MongoClient
 #dnspython==2.1.0
@@ -21,7 +22,7 @@ from PythonGists import Gist
 #Init functions
 def ourStrip(strIn):
     return "".join(c for c in strIn if c not in "_- .[]()")
-def convertFileForPackage(inFile, fileName, zip, zipFileName):
+def convertFileForPackage(inFile, fileName, zip):
     rawContents = inFile.read()
 
     if ".osu" in fileName:
@@ -30,7 +31,7 @@ def convertFileForPackage(inFile, fileName, zip, zipFileName):
 
         for index, line in enumerate(contentsList):
             if "AudioFilename:" in line:
-                contentsList[index] = f"AudioFilename: USER_BEATMAPS/{os.path.splitext(os.path.basename(zipFileName))[0]}/audio.mp3"
+                contentsList[index] = f"AudioFilename: audio.mp3"
                 break
 
         rawContents = "".join([string + "\r\n" for string in contentsList]).encode("utf-8")
@@ -157,7 +158,7 @@ async def verifyPackage(title, artist, ctx):
         return False
     return True
 def sendToDatabase(content, fname, title, artist, difficulties):
-    file = drive.CreateFile({"title": fname, "parents": [{"id": UBMapsID}]})
+    file = drive.CreateFile({"title": "ONLINE_" + fname, "parents": [{"id": UBMapsID}]})
     file.content = io.BytesIO(content)
     file.Upload()
     file.InsertPermission({"type": "anyone", "role": "reader"})
@@ -222,10 +223,23 @@ async def convertUploadPackage(ctx):
         with zp.ZipFile(io.BytesIO(response.content), "r") as zip:
             for fileName in zip.namelist():
                 with zip.open(fileName) as inFile:
-                    convertFileForPackage(inFile, fileName, newZip, fname)
-    content = newZipIO.getvalue()
+                    convertFileForPackage(inFile, fileName, newZip)
 
+    content = newZipIO.getvalue()
     title, artist, difficulties = getDataFromBmap(content)
+
+    with zp.ZipFile(newZipIO, "a", compression=zp.ZIP_LZMA) as newZip:
+        with newZip.open("info.json", "w") as infoFile:
+            infoFile.write(json.dumps({
+                                            "name": title, 
+                                            "date": str(date.today().strftime("%d/%m/%Y")), 
+                                            "artist": artist, 
+                                            "difficulties": difficulties
+                                        }, indent=4).encode("utf-8"))
+
+    content = newZipIO.getvalue()
+    title, artist, difficulties = getDataFromBmap(content)
+
     await ctx.send(f"Converted {title}")
 
     if await verifyPackage(title, artist, ctx):
@@ -323,13 +337,37 @@ async def downloadPackage(ctx, type, searchInput):
 
 
 
+@bot.command(name="delete")
+@commands.has_role("Moderator")
+async def delete(ctx, title):
+    toLoop = DBINDEX.aggregate([{"$search": {"text": {"query": title, "path": "name"}}}])
+    if title == "*":
+        toLoop = DBINDEX.find()
 
+    for package in toLoop:
+        file = drive.CreateFile({"id": package["file_id"]})
+        file.Delete()
 
+        DBINDEX.delete_one(package)
+
+        await ctx.send(f"Deleted {package['name']}!")
+        print(f"Deleted {package['name']}!")
+
+    await ctx.send("Done!")
+    print("Done!")
+        
+
+@delete.error
+async def info_error(ctx, error):
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("HELL NAH")
+        print(f"{ctx.author} had the wrong roles...")
 
 
 
 @bot.command(name="ping")
 async def ping(ctx):
+    await ctx.send("pong")
     print("pong")
 
 #Run the bot
